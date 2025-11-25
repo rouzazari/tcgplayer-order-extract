@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import pickle
 import time
@@ -13,17 +14,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
+from tcgplayer_order_extract.storage import S3Storage, LocalStorage
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class TCGPlayerOrderExtractor:
     COOKIES_FILE = r'C:\temp\cookies.pkl'
     ORDERS_DIR = r'C:\temp\orders'
 
-    def __init__(self):
+    def __init__(self, username, password, storage, **kwargs):
         self.driver = None
         self.wait = None
         self.logged_in = False
         self.order_window = None
+
+        self.username = username
+        self.password = password
+
+        if storage['type'] == 'LocalStorage':
+            self.storage = LocalStorage(storage['path'])
+        elif storage['type'] == 'S3Storage':
+            self.storage = S3Storage(storage['bucket_name'])
 
     def wait_for_element(self, selector_type=By.CSS_SELECTOR, selector=None):
         return self.wait.until(ec.element_to_be_clickable((selector_type, selector)))
@@ -50,7 +64,7 @@ class TCGPlayerOrderExtractor:
         try:
             sign_in_button = self.driver.find_element(By.XPATH, "//button[contains(., 'Sign In')]")
         except NoSuchElementException:
-            print('already logged in')
+            logger.info('already logged in')
             self.logged_in = True
             return
 
@@ -64,6 +78,7 @@ class TCGPlayerOrderExtractor:
         time.sleep(1)
         sign_in_button.click()
         self.logged_in = True
+        logger.info('completed log in')
 
     def navigate_to_orders(self, date_from, date_to):
         url = f"https://sellerportal.tcgplayer.com/orders?orderDateFrom={date_from}&orderDateTo={date_to}&fulfillmentTypes=Normal&searchRange=Custom&page=1&size=500&sortBy"
@@ -76,8 +91,10 @@ class TCGPlayerOrderExtractor:
             order_links = self.wait.until(
                 ec.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-testid='OrderIndex_Table_OrderLink']")))
         except TimeoutException:
-            print('no orders found')
+            logger.info('no orders found')
             return
+
+        logger.info(f'found {len(order_links)} orders')
 
         for link in order_links:
             # get order href and go to url
@@ -96,17 +113,16 @@ class TCGPlayerOrderExtractor:
                     response = log['params']['response']
                     response['requestId'] = log['params']['requestId']
                     if 'url' in response and f'https://order-management-api.tcgplayer.com/orders/{order_number}' in response['url']:
-                        # print(log['params'])
                         responses += [response]
                         response['body'] = self.driver.execute_cdp_cmd('Network.getResponseBody',
                                                                        {'requestId': response['requestId']})['body']
                         response['body_json'] = json.loads(response['body'])
             if not responses:
-                print(f'error getting order data for order number {order_number}')
+                logger.warning(f'error getting order data for order number {order_number}')
                 continue
 
-            with open(os.path.join(self.ORDERS_DIR, f'{order_number}.json'), 'w') as f:
-                json.dump(responses, f)
+            f = f'{order_number}.json'
+            self.storage.save_file(responses, f)
 
             # return to order window
             self.driver.close()
@@ -114,10 +130,10 @@ class TCGPlayerOrderExtractor:
             self.driver.switch_to.window(self.order_window)
             time.sleep(2.0)
 
-    def run(self, username, password, date_from, date_to):
+    def run(self, date_from, date_to):
         try:
             self.initialize_driver()
-            self.login(username, password)
+            self.login(self.username, self.password)
             self.navigate_to_orders(date_from, date_to)
             self.extract_orders()
         finally:
@@ -132,14 +148,28 @@ class TCGPlayerOrderExtractor:
                 self.driver.close()
 
 if __name__ == "__main__":
-    extractor = TCGPlayerOrderExtractor()
-
     # TODO: make these commandline arguments and/or from config file
-    args = {
+    init_args = {
         'username': "",
         'password': "",
-        'date_from': "11/1/2025",
-        'date_to': "11/23/2025",
+        # LocalStorage
+        # 'storage': {
+        #     'type': 'LocalStorage',
+        #     'path': 'C:\\temp\\orders',
+        # },
+        # S3Storage
+        'storage': {
+            'type': 'S3Storage',
+            'bucket_name': '',
+        }
     }
 
-    extractor.run(**args)
+    extractor = TCGPlayerOrderExtractor(**init_args)
+
+    run_args = {
+        'date_from': "11/24/2025",
+        'date_to': "11/24/2025",
+    }
+
+    extractor.run(**run_args)
+
