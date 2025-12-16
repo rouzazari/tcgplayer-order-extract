@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -16,16 +17,15 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
 from tcgplayer_order_extract.storage import S3Storage, LocalStorage
 
-
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class TCGPlayerOrderExtractor:
     COOKIES_FILE = r'C:\temp\cookies.pkl'
-    ORDERS_DIR = r'C:\temp\orders'
 
-    def __init__(self, username, password, storage, **kwargs):
+    def __init__(self, username=None, password=None, storage=None, **kwargs):
         self.driver = None
         self.wait = None
         self.logged_in = False
@@ -124,7 +124,7 @@ class TCGPlayerOrderExtractor:
             f = f'{order_number}.json'
             self.storage.save_file(responses, f)
 
-            # return to order window
+            # return to the order window
             self.driver.close()
             time.sleep(1.5)
             self.driver.switch_to.window(self.order_window)
@@ -147,29 +147,49 @@ class TCGPlayerOrderExtractor:
                 # clean up driver
                 self.driver.close()
 
-if __name__ == "__main__":
-    # TODO: make these commandline arguments and/or from config file
-    init_args = {
-        'username': "",
-        'password': "",
-        # LocalStorage
-        # 'storage': {
-        #     'type': 'LocalStorage',
-        #     'path': 'C:\\temp\\orders',
-        # },
-        # S3Storage
-        'storage': {
-            'type': 'S3Storage',
-            'bucket_name': '',
-        }
+
+def main():
+    parser = argparse.ArgumentParser(description='Extract TCGPlayer order information')
+    parser.add_argument('--login', help='TCGPlayer login option')
+    parser.add_argument('--username', help='TCGPlayer login username')
+    parser.add_argument('--password', help='TCGPlayer login password')
+    parser.add_argument('--storage-type', choices=['LocalStorage', 'S3Storage'], required=True, help='Storage type to use')
+    parser.add_argument('--storage-path', help='Local storage path (required for LocalStorage)')
+    parser.add_argument('--bucket-name', help='S3 bucket name (required for S3Storage)')
+    parser.add_argument('--date-from', required=True, help='Start date in MM/DD/YYYY format')
+    parser.add_argument('--date-to', required=True, help='End date in MM/DD/YYYY format')
+
+    args = parser.parse_args()
+
+    if args.storage_type == 'LocalStorage' and not args.storage_path:
+        parser.error('--storage-path is required when using LocalStorage')
+    if args.storage_type == 'S3Storage' and not args.bucket_name:
+        parser.error('--bucket-name is required when using S3Storage')
+
+    storage_config = {
+        'type': args.storage_type,
+        'path': args.storage_path if args.storage_type == 'LocalStorage' else None,
+        'bucket_name': args.bucket_name if args.storage_type == 'S3Storage' else None
     }
+
+    init_args = {
+        'storage': storage_config
+    }
+    if args.login == 'cookies-only':
+        pass
+    else:
+        init_args['username']  = args.username
+        init_args['password'] = args.password
 
     extractor = TCGPlayerOrderExtractor(**init_args)
 
     run_args = {
-        'date_from': "11/24/2025",
-        'date_to': "11/24/2025",
+        'date_from': args.date_from,
+        'date_to': args.date_to,
     }
 
     extractor.run(**run_args)
 
+
+if __name__ == "__main__":
+    main()
