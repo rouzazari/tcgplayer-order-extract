@@ -81,13 +81,13 @@ class TCGPlayerOrderExtractor:
         self.logged_in = True
         logger.info('completed log in')
 
-    def navigate_to_orders(self, date_from, date_to):
-        url = f"https://sellerportal.tcgplayer.com/orders?orderDateFrom={date_from}&orderDateTo={date_to}&fulfillmentTypes=Normal&searchRange=Custom&page=1&size=500&sortBy"
+    def navigate_to_orders(self, date_from, date_to, order_type):
+        url = f"https://sellerportal.tcgplayer.com/orders?orderDateFrom={date_from}&orderDateTo={date_to}&fulfillmentTypes={order_type}&searchRange=Custom&page=1&size=500&sortBy"
         self.driver.get(url)
         self.wait_for_element(By.ID, "searchTerm")
         self.order_window = self.driver.current_window_handle
 
-    def extract_orders(self):
+    def extract_orders(self, skip_existing=False):
         try:
             order_links = self.wait.until(
                 ec.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-testid='OrderIndex_Table_OrderLink']")))
@@ -100,11 +100,17 @@ class TCGPlayerOrderExtractor:
         for link in order_links:
             # get order href and go to url
             order_href = link.get_attribute("href")
+            order_number = os.path.basename(urlparse(order_href).path)
+
+            destination_filename = f'{order_number}.json'
+
+            if skip_existing and (destination_filename in self.storage.md5s):
+                logger.info(f'{order_number} already exists in storage')
+                continue
+
             self.driver.switch_to.new_window(WindowTypes.TAB)
             self.driver.get(order_href)
             time.sleep(2.0)
-
-            order_number = os.path.basename(urlparse(order_href).path)
 
             responses = []
             logs = self.driver.get_log('performance')
@@ -122,10 +128,9 @@ class TCGPlayerOrderExtractor:
                 logger.warning(f'error getting order data for order number {order_number}')
                 continue
 
-            f = f'{order_number}.json'
             body = responses[0]['body']
             json_body = json.loads(body)
-            self.storage.save_file(json_body, f, check_md5=self.check_md5)
+            self.storage.save_file(json_body, destination_filename, check_md5=self.check_md5)
 
             # return to the order window
             self.driver.close()
@@ -133,12 +138,12 @@ class TCGPlayerOrderExtractor:
             self.driver.switch_to.window(self.order_window)
             time.sleep(2.0)
 
-    def run(self, date_from, date_to):
+    def run(self, date_from, date_to, order_type, skip_existing):
         try:
             self.initialize_driver()
             self.login(self.username, self.password)
-            self.navigate_to_orders(date_from, date_to)
-            self.extract_orders()
+            self.navigate_to_orders(date_from, date_to, order_type)
+            self.extract_orders(skip_existing)
         finally:
             if self.driver:
 
@@ -161,6 +166,8 @@ def main():
     parser.add_argument('--bucket-name', help='S3 bucket name (required for S3Storage)')
     parser.add_argument('--date-from', required=True, help='Start date in MM/DD/YYYY format')
     parser.add_argument('--date-to', required=True, help='End date in MM/DD/YYYY format')
+    parser.add_argument('--order-type', choices=['Normal', 'Direct'], required=True, default='Normal', help='Order type to extract')
+    parser.add_argument('--skip-existing', action='store_true', help='Skip orders that already exist in storage')
     parser.add_argument('--check-md5', action='store_true', help='Check MD5 of downloaded files')
 
     args = parser.parse_args()
@@ -191,6 +198,8 @@ def main():
     run_args = {
         'date_from': args.date_from,
         'date_to': args.date_to,
+        'order_type': args.order_type,
+        'skip_existing': args.skip_existing,
     }
 
     extractor.run(**run_args)
