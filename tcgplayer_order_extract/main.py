@@ -144,6 +144,7 @@ class TCGPlayerOrderExtractor:
             next_page_button = self.driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Next page"]')
             if next_page_button.is_enabled():
                 next_page_button.click()
+                time.sleep(2.0)
             else:
                 break
 
