@@ -88,56 +88,64 @@ class TCGPlayerOrderExtractor:
         self.order_window = self.driver.current_window_handle
 
     def extract_orders(self, skip_existing=False):
-        try:
-            order_links = self.wait.until(
-                ec.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-testid='OrderIndex_Table_OrderLink']")))
-        except TimeoutException:
-            logger.info('no orders found')
-            return
+        while True:
+            try:
+                order_links = self.wait.until(
+                    ec.presence_of_all_elements_located(
+                        (By.CSS_SELECTOR, "a[data-testid='OrderIndex_Table_OrderLink']")))
+            except TimeoutException:
+                logger.info('no orders found')
+                return
 
-        logger.info(f'found {len(order_links)} orders')
+            logger.info(f'found {len(order_links)} orders')
 
-        for link in order_links:
-            # get order href and go to url
-            self.wait.until(ec.visibility_of(link))
-            order_href = link.get_attribute("href")
-            order_number = os.path.basename(urlparse(order_href).path)
+            for link in order_links:
+                # get order href and go to url
+                self.wait.until(ec.visibility_of(link))
+                order_href = link.get_attribute("href")
+                order_number = os.path.basename(urlparse(order_href).path)
 
-            destination_filename = f'{order_number}.json'
+                destination_filename = f'{order_number}.json'
 
-            if skip_existing and (destination_filename in self.storage.md5s):
-                logger.info(f'{order_number} already exists in storage')
-                continue
+                if skip_existing and (destination_filename in self.storage.md5s):
+                    logger.info(f'{order_number} already exists in storage')
+                    continue
 
-            self.driver.switch_to.new_window(WindowTypes.TAB)
-            self.driver.get(order_href)
-            time.sleep(1.0)
+                self.driver.switch_to.new_window(WindowTypes.TAB)
+                self.driver.get(order_href)
+                time.sleep(1.0)
 
-            responses = []
-            logs = self.driver.get_log('performance')
-            for entry in logs:
-                log = json.loads(entry['message'])['message']
-                if log['method'] == 'Network.responseReceived':
-                    response = log['params']['response']
-                    response['requestId'] = log['params']['requestId']
-                    if 'url' in response and f'https://order-management-api.tcgplayer.com/orders/{order_number}' in response['url']:
-                        responses += [response]
-                        response['body'] = self.driver.execute_cdp_cmd('Network.getResponseBody',
-                                                                       {'requestId': response['requestId']})['body']
-                        response['body_json'] = json.loads(response['body'])
-            if not responses:
-                logger.warning(f'error getting order data for order number {order_number}')
+                responses = []
+                logs = self.driver.get_log('performance')
+                for entry in logs:
+                    log = json.loads(entry['message'])['message']
+                    if log['method'] == 'Network.responseReceived':
+                        response = log['params']['response']
+                        response['requestId'] = log['params']['requestId']
+                        if 'url' in response and f'https://order-management-api.tcgplayer.com/orders/{order_number}' in response['url']:
+                            responses += [response]
+                            response['body'] = self.driver.execute_cdp_cmd('Network.getResponseBody',
+                                                                           {'requestId': response['requestId']})['body']
+                            response['body_json'] = json.loads(response['body'])
+                if not responses:
+                    logger.warning(f'error getting order data for order number {order_number}')
+                    self.driver.close()
+                    self.driver.switch_to.window(self.order_window)
+                    continue
+
+                body = responses[0]['body']
+                json_body = json.loads(body)
+                self.storage.save_file(json_body, destination_filename, check_md5=self.check_md5)
+
+                # return to the order window
                 self.driver.close()
                 self.driver.switch_to.window(self.order_window)
-                continue
 
-            body = responses[0]['body']
-            json_body = json.loads(body)
-            self.storage.save_file(json_body, destination_filename, check_md5=self.check_md5)
-
-            # return to the order window
-            self.driver.close()
-            self.driver.switch_to.window(self.order_window)
+            next_page_button = self.driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Next page"]')
+            if next_page_button.is_enabled():
+                next_page_button.click()
+            else:
+                break
 
     def run(self, date_from, date_to, order_type, skip_existing):
         try:
