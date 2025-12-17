@@ -99,6 +99,7 @@ class TCGPlayerOrderExtractor:
 
         for link in order_links:
             # get order href and go to url
+            self.wait.until(ec.visibility_of(link))
             order_href = link.get_attribute("href")
             order_number = os.path.basename(urlparse(order_href).path)
 
@@ -110,7 +111,7 @@ class TCGPlayerOrderExtractor:
 
             self.driver.switch_to.new_window(WindowTypes.TAB)
             self.driver.get(order_href)
-            time.sleep(2.0)
+            time.sleep(1.0)
 
             responses = []
             logs = self.driver.get_log('performance')
@@ -126,6 +127,8 @@ class TCGPlayerOrderExtractor:
                         response['body_json'] = json.loads(response['body'])
             if not responses:
                 logger.warning(f'error getting order data for order number {order_number}')
+                self.driver.close()
+                self.driver.switch_to.window(self.order_window)
                 continue
 
             body = responses[0]['body']
@@ -134,9 +137,7 @@ class TCGPlayerOrderExtractor:
 
             # return to the order window
             self.driver.close()
-            time.sleep(1.5)
             self.driver.switch_to.window(self.order_window)
-            time.sleep(2.0)
 
     def run(self, date_from, date_to, order_type, skip_existing):
         try:
