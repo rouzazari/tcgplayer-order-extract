@@ -25,11 +25,12 @@ logger.setLevel(logging.INFO)
 class TCGPlayerOrderExtractor:
     COOKIES_FILE = r'C:\temp\cookies.pkl'
 
-    def __init__(self, username=None, password=None, storage=None, **kwargs):
+    def __init__(self, username=None, password=None, storage=None, check_md5=False, **kwargs):
         self.driver = None
         self.wait = None
         self.logged_in = False
         self.order_window = None
+        self.check_md5 = check_md5
 
         self.username = username
         self.password = password
@@ -122,7 +123,9 @@ class TCGPlayerOrderExtractor:
                 continue
 
             f = f'{order_number}.json'
-            self.storage.save_file(responses, f)
+            body = responses[0]['body']
+            json_body = json.loads(body)
+            self.storage.save_file(json_body, f, check_md5=self.check_md5)
 
             # return to the order window
             self.driver.close()
@@ -158,6 +161,7 @@ def main():
     parser.add_argument('--bucket-name', help='S3 bucket name (required for S3Storage)')
     parser.add_argument('--date-from', required=True, help='Start date in MM/DD/YYYY format')
     parser.add_argument('--date-to', required=True, help='End date in MM/DD/YYYY format')
+    parser.add_argument('--check-md5', action='store_true', help='Check MD5 of downloaded files')
 
     args = parser.parse_args()
 
@@ -173,7 +177,8 @@ def main():
     }
 
     init_args = {
-        'storage': storage_config
+        'storage': storage_config,
+        'check_md5': args.check_md5,
     }
     if args.login == 'cookies-only':
         pass

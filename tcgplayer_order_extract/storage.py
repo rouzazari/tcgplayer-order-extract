@@ -28,8 +28,20 @@ class LocalStorage(Storage):
         self.base_path = base_path
         os.makedirs(base_path, exist_ok=True)
 
-    def save_file(self, data: Union[str, Dict[str, Any], List[Dict[str, Any]]], filepath: str) -> None:
+    def save_file(self, data: Union[str, Dict[str, Any], List[Dict[str, Any]]], filepath: str, check_md5=False) -> None:
         full_path = os.path.join(self.base_path, filepath)
+
+        json_data = json.dumps(data).encode('utf-8')
+
+        if check_md5:
+            data_md5 = hashlib.md5(json_data).hexdigest()
+            md5_hash = None
+            with open(full_path, "rb") as file:
+                file_contents = file.read()
+                md5_hash = hashlib.md5(file_contents).hexdigest()
+            if md5_hash == data_md5:
+                logger.info(f"File {filepath} already exists in local path '{self.base_path}' with same md5")
+                return
 
         with open(full_path, 'w') as f:
             json.dump(data, f)
@@ -57,13 +69,22 @@ class S3Storage(Storage):
         self.bucket_name = bucket_name
         self.s3 = boto3.resource('s3')
         self.bucket = self.s3.Bucket(self.bucket_name)
+        self.md5s = self.get_all_object_md5()
 
-    def save_file(self, data: Union[str, Dict[str, Any], List[Dict[str, Any]]], filepath: str) -> None:
-        json_string = json.dumps(data)
-        body = json_string.encode('utf-8')
+    def save_file(self, data: Union[str, Dict[str, Any], List[Dict[str, Any]]], filepath: str, check_md5=False) -> None:
+        json_data = json.dumps(data).encode('utf-8')
+
+        if check_md5:
+            data_md5 = hashlib.md5(json_data).hexdigest()
+            s3_md5 = self.md5s.get(filepath)
+            if s3_md5 is not None:
+                if s3_md5 == data_md5:
+                    logger.info(f"File {filepath} already exists in S3 bucket {self.bucket_name} with same md5")
+                    return
+
         self.bucket.put_object(
             Key=filepath,
-            Body=body,
+            Body=json_data,
             ContentType='application/json',
         )
         logger.info(f"Saved file to S3 bucket {self.bucket_name} at {filepath}")
@@ -72,7 +93,7 @@ class S3Storage(Storage):
         response = self.s3.head_object(Bucket=self.bucket_name, Key=object_key)
         return response.get("ETag", "").strip('"')
 
-    def get_all_object_md5(self):
+    def get_all_object_md5(self) -> dict:
         objects = {}
         for obj in self.bucket.objects.all():
             objects[obj.key] = obj.e_tag.strip('"')
@@ -90,17 +111,29 @@ def copy_s3_to_local(bucket_name: str, base_path: str):
     local_storage = LocalStorage(base_path=base_path)
 
     s3_md5s = s3_storage.get_all_object_md5()
+    status = {
+        'added_new_files': [],
+        'updated_files': [],
+        'existing_files_with_same_md5': [],
+    }
+
     for key, s3_md5 in s3_md5s.items():
         local_md5 = local_storage.get_file_md5(key)
         if local_md5 is None:
+            status['added_files'].append(key)
             logger.info(f"Copying *new* {key} from S3 to local storage")
             local_storage.save_file(s3_storage.load_file(key), key)
         if s3_md5 != local_md5:
+            status['updated_files'].append(key)
             logger.info(f"Overwriting {key} from S3 to local storage")
             local_storage.save_file(s3_storage.load_file(key), key)
         else:
+            status['existing_files_with_same_md5'].append(key)
             logger.info(f"{key} already exists in local storage with same md5")
 
+    logger.info("Summary:")
+    for k, v in status.items():
+        logger.info(f"{len(v)} {k}")
 
 
 def main():
