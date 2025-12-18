@@ -123,7 +123,7 @@ def copy_s3_to_local(bucket_name: str, base_path: str):
             status['added_new_files'].append(key)
             logger.info(f"Copying *new* {key} from S3 to local storage")
             local_storage.save_file(s3_storage.load_file(key), key)
-        if s3_md5 != local_md5:
+        elif s3_md5 != local_md5:
             status['updated_files'].append(key)
             logger.info(f"Overwriting {key} from S3 to local storage")
             local_storage.save_file(s3_storage.load_file(key), key)
