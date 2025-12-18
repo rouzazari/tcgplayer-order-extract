@@ -120,7 +120,7 @@ def copy_s3_to_local(bucket_name: str, base_path: str):
     for key, s3_md5 in s3_md5s.items():
         local_md5 = local_storage.get_file_md5(key)
         if local_md5 is None:
-            status['added_files'].append(key)
+            status['added_new_files'].append(key)
             logger.info(f"Copying *new* {key} from S3 to local storage")
             local_storage.save_file(s3_storage.load_file(key), key)
         if s3_md5 != local_md5:
