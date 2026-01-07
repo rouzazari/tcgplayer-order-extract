@@ -399,6 +399,7 @@ def main():
     orders_dir = r'C:\temp\orders'
     orders = load_orders_jsons(orders_dir)
     orders_df, lines_df = normalize_orders_with_refunds(orders)
+    products_df = lines_df.groupby(['product_name', 'productId', 'skuId']).agg({'quantity': 'sum'}).reset_index()
 
     payments_dir = r'C:\temp\orders\payments'
     payment_orders_df, adjustments_df = parse_payments_html_folder(payments_dir)
@@ -407,6 +408,13 @@ def main():
     lines_df.to_excel(output_dir / "order_lines.xlsx", index=False)
     payment_orders_df.to_excel(output_dir / "payments_orders.xlsx", index=False)
     adjustments_df.to_excel(output_dir / "payments_adjustments.xlsx", index=False)
+
+    with pd.ExcelWriter(output_dir / "aggregated_summary.xlsx") as writer:
+        orders_df.to_excel(writer, sheet_name="orders", index=False)
+        lines_df.to_excel(writer, sheet_name="order_lines", index=False)
+        products_df.to_excel(writer, sheet_name="products", index=False)
+        payment_orders_df.to_excel(writer, sheet_name="payments_orders", index=False)
+        adjustments_df.to_excel(writer, sheet_name="payments_adjustments", index=False)
 
     # parser = argparse.ArgumentParser(description='Extract TCGPlayer order information')
     # args = parser.parse_args()
