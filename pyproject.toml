@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tcgplayer-order-extract"
+version = "0.1.0"
+description = "Extract and process order data from TCGPlayer"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Rouz Azari"}
+]
+keywords = ["tcgplayer", "scraper", "orders", "trading cards"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "boto3>=1.28.0",
+    "lxml>=4.9.0",
+    "numpy>=1.24.0",
+    "openpyxl>=3.1.0",
+    "pandas>=2.0.0",
+    "protobuf>=4.0.0",
+    "pyparsing>=3.0.0",
+    "pytz>=2023.0",
+    "requests>=2.31.0",
+    "selenium>=4.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/rouzazari/tcgplayer-order-extract"
+"Bug Tracker" = "https://github.com/rouzazari/tcgplayer-order-extract/issues"
+"Repository" = "https://github.com/rouzazari/tcgplayer-order-extract"
+
+# Uncomment if you want a CLI entry point
+# [project.scripts]
+# tcgplayer-extract = "tcgplayer_order_extract.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tcgplayer_order_extract*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
