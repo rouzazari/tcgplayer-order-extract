@@ -145,7 +145,7 @@ class TCGPlayerOrderExtractor:
             if next_page_button.is_enabled():
                 self.wait.until(ec.element_to_be_clickable(next_page_button))
                 next_page_button.click()
-                time.sleep(2.0)
+                time.sleep(3.5)
             else:
                 break
 

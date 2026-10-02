@@ -129,7 +129,7 @@ def copy_s3_to_local(bucket_name: str, base_path: str):
             local_storage.save_file(s3_storage.load_file(key), key)
         else:
             status['existing_files_with_same_md5'].append(key)
-            logger.info(f"{key} already exists in local storage with same md5")
+            # logger.info(f"{key} already exists in local storage with same md5")
 
     logger.info("Summary:")
     for k, v in status.items():

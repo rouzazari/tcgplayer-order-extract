@@ -154,6 +154,8 @@ def normalize_orders_with_refunds(orders: list[dict]) -> tuple[pd.DataFrame, pd.
 
         # ----- build order row -----
         tx = o.get("transaction", {}) or {}
+        shipping_address = o.get("shippingAddress", {}) or {}
+        tracking_numbers = o.get("trackingNumbers", []) or []
         gross = float(tx.get("grossAmount", 0.0) or 0.0)
         net = float(tx.get("netAmount", 0.0) or 0.0)
 
@@ -161,6 +163,8 @@ def normalize_orders_with_refunds(orders: list[dict]) -> tuple[pd.DataFrame, pd.
             "orderNumber": order_id,
             "createdAt": created_at,
             "order_date": pd.to_datetime(created_at, errors="coerce", utc=True).date() if created_at else pd.NaT,
+            "buyerName": o.get("buyerName"),
+            "recipientName": shipping_address.get("recipientName"),
             "status": o.get("status"),
             "orderChannel": o.get("orderChannel"),
             "orderFulfillment": o.get("orderFulfillment"),
@@ -170,6 +174,8 @@ def normalize_orders_with_refunds(orders: list[dict]) -> tuple[pd.DataFrame, pd.
             "directFeeAmount": float(tx.get("directFeeAmount", 0.0) or 0.0),
             "productAmount": float(tx.get("productAmount", 0.0) or 0.0),
             "shippingAmount": float(tx.get("shippingAmount", 0.0) or 0.0),
+            "trackingCarrier": '|'.join(tn.get('carrier') for tn in tracking_numbers),
+            "trackingNumber": '|'.join(tn.get('trackingNumber') for tn in tracking_numbers),
 
             # integrated refund fields
             "refund_total_amount": refund_total_amount,
@@ -261,7 +267,9 @@ def parse_payments_html(path: str):
     # --- Table 1: Past Payments (per-order totals) ---
     orders_tbl = soup.select_one('table[data-testid="Payments_Orders_PastPayments"]')
     if orders_tbl is None:
-        raise ValueError("Could not find Payments_Orders_PastPayments table")
+        orders_tbl = soup.select_one('table[data-testid="Payment_PendingPayments_Orders"]')
+        if orders_tbl is None:
+            raise ValueError("Could not find Payments_Orders_PastPayments table")
 
     rows = []
     for tr in orders_tbl.select("tbody tr"):
@@ -299,9 +307,11 @@ def parse_payments_html(path: str):
     # --- Table 2: Adjustments (row-level) ---
     adj_tbl = soup.select_one('table[data-testid="Payment_Orders_Adjustments"]')
     if adj_tbl is None:
-        # some reports might omit adjustments
-        adjustments_df = pd.DataFrame(columns=["adjustmentAmount", "reason", "orderNumber_from_reason", "adjustment_type"])
-        return payment_orders_df, adjustments_df
+        adj_tbl = soup.select_one('table[data-testid="Payment_PendingOrders_Adjustments"]')
+        if adj_tbl is None:
+            # some reports might omit adjustments
+            adjustments_df = pd.DataFrame(columns=["adjustmentAmount", "reason", "orderNumber_from_reason", "adjustment_type"])
+            return payment_orders_df, adjustments_df
 
     adj_rows = []
     for tr in adj_tbl.select("tbody tr"):
